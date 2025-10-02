@@ -7,6 +7,6 @@
 ## Backend setup
 
 ### ->Create a .env file
-### ->Use the ".env.example" file as a template and set up MONGODB_URI, PORT,  JWT_SECRET, GMAIL_SENDER_ID AND GMAIL_APP_PASS
+### ->Use the ".env.example" file as a template and set up AWS_REGION, PORT, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, JWT_SECRET, GMAIL_SENDER_ID AND GMAIL_APP_PASS
 ### ->Run "npm i" followed by "node --watch index.js" in a seperate terminal with "takshila backend" open to start the server
 
