@@ -8,23 +8,28 @@ const Otp = () => {
     const otpInput = useRef()
     const navigate= useNavigate()
     const location=useLocation()
-    const _id=location.state?._id
+    const email=location.state?.email
     useEffect(() => {
-      if(!_id) navigate("/")    
+      if(!email) navigate("/")    
     }, [])
     
     const submitOTP=async(e)=>{
         try{
-            axios.defaults.withCredentials=true           
-            const {data}=await axios.post(`${import.meta.env.VITE_BASE_URL}/verifyOTP`,{otp:otpInput.current.value,_id})
-            console.log(data)
-            if(data.success){
-                toast.success("Logging you in")
-                navigate("/dashboard")
-            }else{
-                toast.error("Some issue")
+            if(otpInput.current.value.length!=6) toast.error("Enter 6 digit otp")
+            else {
+                axios.defaults.withCredentials=true           
+                const {data}=await axios.post(`${import.meta.env.VITE_BASE_URL}/verifyOTP`,{otp:otpInput.current.value,email})
+                console.log(data)
+                if(data.success){
+                    toast.success("Logging you in")
+                    navigate("/dashboard")
+                }else{
+                    toast.error(data.message)
+                }
             }
         }catch(err){
+            console.log('hryre')
+            toast.error(err.response.data.message)
             console.log(err)
         }
 

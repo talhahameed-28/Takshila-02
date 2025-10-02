@@ -12,7 +12,6 @@ const App = () => {
     const [loading, setLoading] = useState(false)
     const navigate=useNavigate()
     const location=useLocation()
-    console.log("location is ",location)
     const submithandler=async(e)=>{
         try{
             setLoading(true)
@@ -23,13 +22,8 @@ const App = () => {
                 const {data}=await axios.post(`${import.meta.env.VITE_BASE_URL}/register`,{username:username.current.value,email:email.current.value,password:password.current.value})
                 console.log(data)
                 if (data.success){
-                //   setloginstate("Login")               
-                //   toast.success('User registered successfully!')
-                //   username.current.value=""
-                //   email.current.value=""
-                //   password.current.value=""
                 navigate(`/verifyOTP`,
-                    {state:{_id:data._id}
+                    {state:{email:data.email}
                 })
             }
                 else{
