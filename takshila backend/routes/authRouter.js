@@ -1,11 +1,12 @@
 const express = require("express");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
-const router = express.Router();
-const users=require("../models/userModel")
 const nodemailer=require("nodemailer")
+const {  PutCommand, GetCommand } =require ("@aws-sdk/lib-dynamodb");
+const ddbDocClient=require("../awsConnect")
 const { check, validationResult } = require("express-validator")
 
+const router = express.Router();
 const transporter = nodemailer.createTransport({
     service: "gmail",
     auth: {
@@ -27,8 +28,15 @@ router.post("/register",[
     try{
 
         if( !username || !password || !email) return res.json({success:false,message:["Missing details"]})
-        const existinguser=await users.findOne({email})
-        if(existinguser) return res.json({success:false , message:["This user already exists"]})  
+        const params = {
+          TableName: "users",
+          Key: {
+            email, 
+          },
+        };
+    
+        const {Item} = await ddbDocClient.send(new GetCommand(params));
+        if(Item) return res.json({success:false , message:["This user already exists"]})  
         next()   
     }catch(err){
       console.log(err)
@@ -73,21 +81,24 @@ router.post("/register",[
     }
 
     const otp = generateOTP();
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // expires in 5 minutes
+    const expiresAt = Math.floor((Date.now()/1000) + 5*60); // expires in 5 minutes
   
     try {
 
       const passwordHash = await bcrypt.hash(password, 10);
-      const user = new users({
-        username,
-        email,
-        password:passwordHash,
-        otp,
-        expiresAt,
-        isVerified: false
-      });
-
-      await user.save()
+        const params = {
+        TableName: "users",
+        Item: {
+          email,   // partition key
+          username,
+          password:passwordHash,
+          isVerified:false,
+          otp,
+          expiresAt
+        },
+      };
+ 
+      await ddbDocClient.send(new PutCommand(params));
  
       await transporter.sendMail({
           from: `"OTP System" <${process.env.GMAIL_SENDER_ID}>`,
@@ -95,8 +106,8 @@ router.post("/register",[
           subject: "Your OTP Code",
           text: `Your OTP code is ${otp}. It expires in 5 minutes.`,
         });
-    
-        res.json({success:true, message: "OTP sent successfully",_id:user._id });
+           
+        res.json({success:true, message: "OTP sent successfully",email });
       } catch (error) {
         console.error(error);
         res.status(500).json({success:false, message: ["Error sending OTP"] });
@@ -105,21 +116,35 @@ router.post("/register",[
 }]);
 
 router.post("/verifyOTP", async (req, res) => {
-  const {_id, otp } = req.body;
-  if (!_id || !otp)
-    return res.status(400).json({ message: "Email and OTP are required" });
+  const {email, otp } = req.body; 
+  if (!email || !otp)
+    return res.status(400).json({success:false, message: "Email and OTP are required" });
 
   try {
-    const user = await users.findById(_id);
+    const params = {
+      TableName: "users",
+      Key: {
+        email, 
+      },
+    };
 
-    if (!user) return res.status(400).json({ message: "Invalid or expired OTP" });
+    const {Item} = await ddbDocClient.send(new GetCommand(params));
+    console.log(Item)
+    if (!Item) return res.status(400).json({success:false, message: "Invalid or expired OTP" });
 
-    if (user.otp !== otp) return res.status(400).json({ error: "Invalid OTP" });
-    user.isVerified = true;
-    user.otp = undefined;
-    user.expiresAt = undefined;
-    await user.save() 
-    const token=jwt.sign({user},process.env.JWT_SECRET,{expiresIn:"1d"})
+    if (Item.otp !== otp) return res.status(400).json({ success:false, message: "Invalid OTP" });
+    if(Math.floor(Date.now()/1000) >= Item.expiresAt) return res.status(400).json({success:false, message: "Expired OTP" });
+    Item.isVerified = true;
+    Item.otp = undefined;
+    delete Item.expiresAt;
+    await ddbDocClient.send(
+      new PutCommand({
+        TableName: "users",
+        Item
+      })
+    );
+    // await user.save() 
+    const token=jwt.sign({user:Item},process.env.JWT_SECRET,{expiresIn:"1d"})
       res.cookie("token",token,{
           httpOnly:true,
           secure:process.env.NODE_ENV ==="production",
@@ -140,11 +165,17 @@ router.post("/login", async (req, res) => {
   const{email,password}=req.body
   if(!email || !password) return res.json({success:false,message:"Email and password are required"})
   try{
-      const user= await users.findOne({email})  
-      if(!user) return res.json({success:false,message:"User not found"})
-      const passmatch=await bcrypt.compare(password,user.password)
+      const params={
+        TableName:"users",
+        Key:{
+          email,
+        }
+      }
+      const {Item}=await ddbDocClient.send(new GetCommand(params))
+      if(!Item) return res.json({success:false,message:"User not found"})
+      const passmatch=await bcrypt.compare(password,Item.password)
       if(!passmatch) return res.json({success:false,message:"Incorrect password"})
-      const token=jwt.sign({user},process.env.JWT_SECRET,{expiresIn:"1d"})
+      const token=jwt.sign({user:Item},process.env.JWT_SECRET,{expiresIn:"1d"})
       res.cookie("token",token,{
           httpOnly:true,
           secure:process.env.NODE_ENV ==="production",
@@ -156,7 +187,7 @@ router.post("/login", async (req, res) => {
       res.json({success:false,message:e.message})
   }
 });
-
+ 
 
 router.post("/logout",(req,res)=>{
   try{
